@@ -1,0 +1,31 @@
+{
+  "name": "fileshare",
+  "version": "0.1.0",
+  "description": "Fileshare system",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hugodecasta/fileshare.git"
+  },
+  "keywords": [
+    "Fileshare",
+    "file",
+    "upload",
+    "download"
+  ],
+  "author": "Hugo Castaneda",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/hugodecasta/fileshare/issues"
+  },
+  "homepage": "https://github.com/hugodecasta/fileshare#readme",
+  "dependencies": {
+    "express": "^5.1.0",
+    "multer": "^2.0.0",
+    "n": "^5.0.1"
+  }
+}
