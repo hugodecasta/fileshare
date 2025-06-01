@@ -6,6 +6,7 @@ Self Hosted Filesharer
 ```shell
 git clone git@github.com:hugodecasta/fileshare.git
 cd fileshare
+git submodule update --init --recursive
 npm i
 ```
 
