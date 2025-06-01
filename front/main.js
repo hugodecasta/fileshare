@@ -7,10 +7,9 @@ const user_db = new DATABASE('user_db', { token: null })
 const user = user_db.object
 
 const input_connect = input(user.token ?? '', "password", (token) => connect(token), true, false)
-    .set_attributes({ name: 'user_token', placeholder: 'Enter your user token' })
+    .set_attributes({ name: 'user_token', placeholder: 'User key' })
 
 div().add2b().add(
-    'User token:',
     input_connect,
     button('Connect', () => connect(input_connect.value))
 )
