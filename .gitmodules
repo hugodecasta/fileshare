@@ -1,0 +1,3 @@
+[submodule "front/vanille"]
+	path = front/vanille
+	url = git@github.com:hugodecasta/vanille.git
