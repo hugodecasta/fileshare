@@ -33,6 +33,18 @@ Everything is self-explanatory
 
 ## User management
 
+### create users
+```shell
+node create_user.js
+```
+
+### create temporary users
+```shell
+node create_user.js <time of life in days>
+```
+
+### remove users
+
 If you need to remove a user, simply delete its `__data/<user_id>` folder
 
 (note by doing so that some of its share points may still exist but linked to nothing, needs future improvement)

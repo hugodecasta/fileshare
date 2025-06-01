@@ -2,6 +2,7 @@ import express from 'express'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { api_router, file_router } from './API.js'
+import FileUser from './filesystem.js'
 import fs from 'fs'
 
 // Get dirname equivalent in ESM
@@ -30,6 +31,12 @@ app.use(express.static(path.join(__dirname, 'front')))
 
 // Set port
 const PORT = process.env.PORT || 3000
+
+// launch user deletion check
+setInterval(() => {
+    FileUser.users_deletion_check()
+}, 1000 * 60 * 60) // every hour
+FileUser.users_deletion_check()
 
 // Start server
 app.listen(PORT, () => {

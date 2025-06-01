@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import fs from 'fs'
+import fs, { fdatasync } from 'fs'
 
 export default class FileUser {
     constructor(user_id) {
@@ -99,11 +99,35 @@ export default class FileUser {
         return false
     }
 
-    static create_user() {
+    check_need_for_deletion() {
+        const info = JSON.parse(fs.readFileSync(this.path + '/info.json', 'utf-8'))
+        return info.lifetime && Date.now() > info.lifetime
+    }
+
+    delete_me() {
+        const list = this.get_file_list(true)
+        for (const file_id in list) {
+            if (list[file_id].share_point) {
+                this.delete_share_point(file_id)
+            }
+            fs.unlinkSync(this.path + '/files/' + file_id)
+        }
+        fs.unlinkSync(this.path + '/list.json')
+        fs.unlinkSync(this.path + '/info.json')
+        fs.rmSync(this.path, { recursive: true })
+    }
+
+
+    static create_user(days_lifetime = null) {
         const user_id = randomUUID()
         const user_path = '__data/' + user_id
         fs.mkdirSync(user_path + '/files', { recursive: true })
         fs.writeFileSync(user_path + '/list.json', JSON.stringify({}, null, 2))
+        fs.writeFileSync(user_path + '/info.json', JSON.stringify({
+            user_id: user_id,
+            created: Date.now(),
+            lifetime: days_lifetime != null ? Date.now() + days_lifetime * 24 * 60 * 60 * 1000 : null
+        }, null, 2))
         return user_id
     }
 
@@ -123,6 +147,17 @@ export default class FileUser {
     static get_share_point_path(share_point) {
         const share_list = FileUser.get_share_file()
         return null
+    }
+
+    static users_deletion_check() {
+        const user_list = fs.readdirSync('__data').filter(file => fs.statSync('__data/' + file).isDirectory())
+        for (const user_id of user_list) {
+            const user = new FileUser(user_id)
+            if (user.check_need_for_deletion()) {
+                console.log('Found user for deletion:', user_id, ' deleting...')
+                user.delete_me()
+            }
+        }
     }
 
 }
