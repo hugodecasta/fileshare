@@ -39,7 +39,7 @@ const header = div('')
 const brand = div()
     .add2(header)
     .add(
-        span('Fileshare').set_style({ fontWeight: 700, fontSize: '20px', letterSpacing: '0.2px' })
+        span('Fileshare').set_style({ fontWeight: 700, fontSize: '21px', letterSpacing: '0.2px' })
     )
 
 const connect_bar = div('')
@@ -203,7 +203,7 @@ function file_comp(file_id, file, user_token, cb) {
             //#region .... DOWNLOAD LINK
             alink('#', '', display_name)
                 .set_style({
-                    fontSize: '16px',
+                    fontSize: '17px',
                     fontWeight: 600,
                     color: '#0f172a',
                     textDecoration: 'none',
@@ -228,7 +228,7 @@ function file_comp(file_id, file, user_token, cb) {
                 }),
             //#region .... DISP
             span(comvert_size_to_display(file.size) + ' · ' + file.downloads.length + ' download(s)')
-                .set_style({ color: '#6b7280', fontSize: '12px' }),
+                .set_style({ color: '#6b7280', fontSize: '13px' }),
             br(),
             (file.time ? new Date(file.time).toLocaleString() : 'time unknown'),
             br(),
@@ -251,7 +251,7 @@ function file_comp(file_id, file, user_token, cb) {
                 cursor: 'pointer'
             })
         )
-        .padding(10).margin(8).set_style({
+        .padding(12).margin(8).set_style({
             border: '1px solid #e5e7eb',
             borderRadius: '12px',
             background: '#ffffff',
@@ -276,7 +276,7 @@ function create_dashboard(user_token) {
             gap: '8px',
             flexWrap: 'wrap'
         }).add(
-            h2('Your files').set_style({ fontSize: '18px', margin: 0 }),
+            h2('Your files').set_style({ fontSize: '19px', margin: 0 }),
             account_stats
         )
     )
@@ -285,8 +285,8 @@ function create_dashboard(user_token) {
     const list_elm = div()
         .set_style({
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-            gap: '12px'
+            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+            gap: '14px'
         })
     async function update_list() {
         const list = await user_get('/api/files/get_list', user_token)
@@ -417,8 +417,8 @@ function create_dashboard(user_token) {
         header.set_style({ padding: is_mobile ? '12px 16px' : '16px 24px' })
         container.set_style({ padding: is_mobile ? '12px' : '20px' })
         list_elm.set_style({
-            gridTemplateColumns: is_mobile ? '1fr' : 'repeat(auto-fill, minmax(180px, 1fr))',
-            gap: is_mobile ? '10px' : '12px'
+            gridTemplateColumns: is_mobile ? '1fr' : 'repeat(auto-fill, minmax(200px, 1fr))',
+            gap: is_mobile ? '12px' : '14px'
         })
         dropper_elm.set_style({ minHeight: is_mobile ? '140px' : '160px' })
     }
