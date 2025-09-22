@@ -285,7 +285,7 @@ function create_dashboard(user_token) {
     const list_elm = div()
         .set_style({
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
             gap: '14px'
         })
     async function update_list() {
@@ -417,7 +417,7 @@ function create_dashboard(user_token) {
         header.set_style({ padding: is_mobile ? '12px 16px' : '16px 24px' })
         container.set_style({ padding: is_mobile ? '12px' : '20px' })
         list_elm.set_style({
-            gridTemplateColumns: is_mobile ? '1fr' : 'repeat(auto-fill, minmax(200px, 1fr))',
+            gridTemplateColumns: is_mobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))',
             gap: is_mobile ? '12px' : '14px'
         })
         dropper_elm.set_style({ minHeight: is_mobile ? '140px' : '160px' })
