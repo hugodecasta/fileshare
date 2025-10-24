@@ -299,7 +299,7 @@ function share_point_comp(file_path, file, user_token, cb) {
     return wrap
 }
 
-function file_comp(file_path, file, user_token, cb) {
+function file_comp(file_path, file, user_token, cb, view_dir) {
     const display_name = fix_mojibake_utf8(file.name ?? '')
     const card = div()
         .add(
@@ -336,6 +336,97 @@ function file_comp(file_path, file, user_token, cb) {
             br(),
             //#region .... Share point
             share_point_comp(file_path, file, user_token, cb).margin({ top: 6, bottom: 6 }),
+            //#region .... MOVE
+            (() => {
+                const controls = div().set_style({ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' })
+                const move_menu = div()
+                    .set_style({
+                        display: 'none',
+                        marginTop: '6px',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        background: '#fff',
+                        boxShadow: '0 2px 8px rgba(16,24,40,0.12)',
+                        padding: '6px',
+                    })
+
+                async function toggle_move_menu() {
+                    if (move_menu.__open) {
+                        move_menu.__open = false
+                        move_menu.set_style({ display: 'none' })
+                        move_menu.clear()
+                        return
+                    }
+                    // open and populate
+                    move_menu.__open = true
+                    move_menu.set_style({ display: 'block' })
+                    move_menu.clear().add(span('Move to:').set_style({ color: '#374151', fontSize: '13px', fontWeight: 600 }))
+
+                    const file_dir = file_path.split('/').slice(0, -1).join('/')
+                    const current_dir = view_dir ?? ''
+                    try {
+                        const items = await user_get(`/api/tree?path=${encodeURIComponent(current_dir)}`, user_token)
+                        const folders = (items || []).filter(i => i.is_directory)
+
+                        const add_option = (label, destFolder) => {
+                            const opt = button(label, async () => {
+                                // Build destination full folder path; server keeps filename
+                                const to = destFolder // may be '' for root
+                                try {
+                                    const resp = await fetch(`/api/move?from=${encodeURIComponent(file_path)}&to=${encodeURIComponent(to)}`, {
+                                        method: 'POST',
+                                        headers: auth_headers(user_token)
+                                    })
+                                    try { await resp.json() } catch (_) { }
+                                } catch (e) { console.error('Move failed', e) }
+                                move_menu.__open = false
+                                move_menu.set_style({ display: 'none' })
+                                await cb()
+                            })
+                                .set_style({
+                                    display: 'block',
+                                    width: '100%',
+                                    textAlign: 'left',
+                                    padding: '6px 8px',
+                                    borderRadius: '6px',
+                                    border: '1px solid #d1d5db',
+                                    background: '#fff',
+                                    color: '#111827',
+                                    cursor: 'pointer'
+                                })
+                                .margin({ top: 6 })
+                            move_menu.add(opt)
+                        }
+
+                        // Root option (skip if already in root)
+                        if (current_dir !== '') add_option('Root', '')
+                        // Up one step into current folder (if file is inside a subfolder of the current view)
+                        if (file_dir !== current_dir) {
+                            // label as "../" to indicate moving up one step to the current folder
+                            add_option('../', current_dir)
+                        }
+                        // Immediate subfolders of current view directory
+                        for (const f of folders) add_option(`/${f.name}`, (current_dir ? current_dir + '/' : '') + f.name)
+                        if (folders.length === 0 && current_dir === '') {
+                            move_menu.add(span('No folders here').set_style({ color: '#6b7280', fontSize: '12px' }))
+                        }
+                    } catch (e) {
+                        console.error('Move menu load failed', e)
+                        move_menu.add(span('Failed to list folders').set_style({ color: '#ef4444', fontSize: '12px' }))
+                    }
+                }
+
+                const move_btn = button('Move', toggle_move_menu).set_style({
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid #d1d5db',
+                    background: '#fff',
+                    color: '#111827',
+                    cursor: 'pointer'
+                })
+
+                return div().add(move_btn, move_menu).margin({ top: 6, bottom: 6 })
+            })(),
             //#region .... DELETE
             button('Delete', async () => {
                 if (!confirm('Delete file "' + display_name + '" ?')) return
@@ -550,7 +641,7 @@ function create_dashboard(user_token, initial_total_size = null, initial_path = 
             list_elm.add(file_comp(p, f, user_token, async () => {
                 await update_tree()
                 await refresh_total_size()
-            }))
+            }, current_path))
         }
     }
     update_tree()

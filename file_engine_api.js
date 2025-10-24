@@ -12,7 +12,8 @@ import {
     location_is_shared,
     get_file_info,
     set_file_info,
-    remove_share
+    remove_share,
+    move_to
 } from './file_engine.js'
 
 // Decode base64 or base64url strings safely to UTF-8
@@ -160,6 +161,31 @@ export function build_api() {
             return res.json({ ok })
         } catch (e) {
             return res.status(500).json({ error: 'Failed to delete share' })
+        }
+    })
+
+    // Move a file to another folder (keeps original filename)
+    // Query params:
+    // - from: full current file path (e.g., "a/b/file.txt")
+    // - to: destination folder path (e.g., "a/c" or "" for root)
+    router.post('/move', (req, res) => {
+        const key = getKeyFromAuth(req)
+        if (!key) return res.status(401).json({ error: 'Missing or invalid Authorization header' })
+        const from = String(req.query.from || '').replace(/^\/+|\/+$/g, '')
+        // destination folder (can be empty string for root)
+        const toFolder = String(req.query.to ?? '').replace(/^\/+|\/+$/g, '')
+        if (!from) return res.status(400).json({ error: 'Missing from' })
+
+        const baseName = from.split('/').filter(Boolean).slice(-1)[0]
+        const dest = (toFolder ? toFolder + '/' : '') + baseName
+
+        if (dest === from) return res.json({ ok: true }) // no-op
+
+        try {
+            move_to(key, from, dest)
+            return res.json({ ok: true })
+        } catch (e) {
+            return res.status(500).json({ error: 'Failed to move file' })
         }
     })
 

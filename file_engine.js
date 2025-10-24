@@ -345,11 +345,11 @@ export function get_blob(key, location, is_download = true) {
     return decrypt_blob(encrypted_blob, dec_key)
 }
 
-export function delete_file(key, location) {
+export function delete_file(key, location, remove_share_too = true) {
     const true_location = get_true_location(key, location)
     if (fs.existsSync(true_location)) {
         fs.unlinkSync(true_location)
-        if (location_is_shared(key, location)) {
+        if (remove_share_too && location_is_shared(key, location)) {
             const loc_hash = get_location_hash(key, location)
             remove_share(key, loc_hash)
         }
@@ -357,6 +357,21 @@ export function delete_file(key, location) {
         return true
     }
     return false
+}
+
+export function move_to(key, from_location, to_location) {
+
+    const blob = get_blob(key, from_location, false)
+    set_file(key, to_location, blob)
+    delete_file(key, from_location, false)
+
+    if (location_is_shared(key, from_location)) {
+        const share_hash = get_location_hash(key, from_location)
+        const new_share_hash = get_location_hash(key, to_location)
+        create_share(key, to_location)
+        create_share_redirect(share_hash, new_share_hash)
+    }
+
 }
 
 //#region ------------------------------------------------------------------------- folder
@@ -473,13 +488,13 @@ export function refactor_all() {
 // console.log(get_tree(uid, ''))
 // console.log(get_tree(uid, 'folder1'))
 
-// console.log(get_blob(uid, 'folder1/file1.txt').toString('utf8'))
+// console.log(get_blob(uid, 'folder1/file1.txt'))
 
 // const share_hash = create_share(uid, 'folder1/file1.txt')
 // console.log(get_tree(uid, 'folder1'))
-// console.log(get_shared_blob(share_hash).toString('utf8'))
+// console.log(get_shared_blob(share_hash))
 
-// console.log(get_blob(uid, 'folder1/file1.txt').toString('utf8'))
+// console.log(get_blob(uid, 'folder1/file1.txt'))
 
 // console.log('full_size', user_full_size(uid))
 
@@ -487,8 +502,21 @@ export function refactor_all() {
 
 // create_share_redirect('CACA', share_hash)
 // console.log('redirect created:')
-// console.log(get_shared_blob('CACA').toString('utf8'))
+// console.log(get_shared_blob('CACA'))
 
 // console.log(get_tree(uid, 'folder1'))
+
+// console.log('moving file1.txt to file3.txt')
+// move_to(uid, 'folder1/file1.txt', 'folder1/file3.txt')
+// console.log(get_tree(uid, 'folder1'))
+
+// console.log(get_shared_blob(share_hash))
+
+// console.log('moving file1.txt to other_folder')
+// move_to(uid, 'folder1/file3.txt', 'crotte.txt')
+// console.log(get_tree(uid, 'folder1'))
+// console.log(get_tree(uid, ''))
+
+// console.log(get_shared_blob(share_hash))
 
 // clear_user(uid)
