@@ -53,6 +53,37 @@ export function build_api() {
     // For binary uploads (per-route raw parser)
     const rawParser = express.raw({ type: '*/*', limit: '5gb' })
 
+    // Minimal mime type guesser based on file extension
+    function guessMime(filename = '') {
+        const ext = (filename.split('.').pop() || '').toLowerCase()
+        switch (ext) {
+            case 'html':
+            case 'htm': return 'text/html; charset=utf-8'
+            case 'css': return 'text/css; charset=utf-8'
+            case 'js':
+            case 'mjs': return 'application/javascript; charset=utf-8'
+            case 'json': return 'application/json; charset=utf-8'
+            case 'txt':
+            case 'log':
+            case 'md': return 'text/plain; charset=utf-8'
+            case 'svg': return 'image/svg+xml; charset=utf-8'
+            case 'png': return 'image/png'
+            case 'jpg':
+            case 'jpeg': return 'image/jpeg'
+            case 'gif': return 'image/gif'
+            case 'webp': return 'image/webp'
+            case 'avif': return 'image/avif'
+            case 'ico': return 'image/x-icon'
+            case 'pdf': return 'application/pdf'
+            case 'mp4': return 'video/mp4'
+            case 'webm': return 'video/webm'
+            case 'ogg': return 'audio/ogg'
+            case 'mp3': return 'audio/mpeg'
+            case 'wav': return 'audio/wav'
+            default: return 'application/octet-stream'
+        }
+    }
+
     // Health/login: ensures root exists and returns a simple ok
     router.get('/login', (req, res) => {
         const key = getKeyFromAuth(req)
@@ -85,6 +116,22 @@ export function build_api() {
         const name = path.split('/').filter(Boolean).slice(-1)[0] || 'download'
         res.setHeader('Content-Type', 'application/octet-stream')
         res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`)
+        return res.send(blob)
+    })
+
+    // View a file inline by path (like static serve)
+    router.get('/view', (req, res) => {
+        const key = getKeyFromAuth(req)
+        if (!key) return res.status(401).json({ error: 'Missing or invalid Authorization header' })
+        const path = String(req.query.path || '').replace(/^\/+/, '')
+        if (!path) return res.status(400).json({ error: 'Missing path' })
+        const blob = get_blob(key, path)
+        if (blob == null) return res.status(404).json({ error: 'Not found' })
+        const name = path.split('/').filter(Boolean).slice(-1)[0] || 'file'
+        const mime = guessMime(name)
+        res.setHeader('Content-Type', mime)
+        // Explicitly inline; browsers will render when possible
+        res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(name)}`)
         return res.send(blob)
     })
 

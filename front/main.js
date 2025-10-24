@@ -319,13 +319,25 @@ function file_comp(file_path, file, user_token, cb, view_dir) {
                 .set_attributes({ title: display_name })
                 .on('click', (e) => e.preventDefault())
                 .set_click(async () => {
-                    const response = await fetch(`/api/blob?path=${encodeURIComponent(file_path)}`, {
+                    // Fetch inline view (preserves MIME type) and open in a new tab without forcing download
+                    const response = await fetch(`/api/view?path=${encodeURIComponent(file_path)}`, {
                         method: 'GET',
                         headers: auth_headers(user_token)
                     })
+                    if (!response.ok) {
+                        try {
+                            const j = await response.json()
+                            alert(j?.error || 'Failed to open file')
+                        } catch (_) {
+                            alert('Failed to open file')
+                        }
+                        return
+                    }
                     const blob = await response.blob()
                     const url = window.URL.createObjectURL(blob)
-                    click_link(url, '_blank', (link) => link.download = display_name)
+                    // Open in a new tab (no download attribute so browser renders inline)
+                    click_link(url, '_blank')
+                    // Give the server a moment to record the access and then refresh
                     setTimeout(cb, 500)
                 }),
             //#region .... DISP
@@ -633,6 +645,18 @@ function create_dashboard(user_token, initial_total_size = null, initial_path = 
                     minWidth: '0'
                 })
             list_elm.add(card)
+        }
+        // Force a visual line break between folders and files
+        if (folders.length > 0 && files.length > 0) {
+            list_elm.add(
+                hr().set_style({
+                    gridColumn: '1 / -1',
+                    width: '100%',
+                    border: 'none',
+                    borderTop: '1px solid #e5e7eb',
+                    margin: '4px 0'
+                })
+            )
         }
         // Files
         for (const f of files) {
