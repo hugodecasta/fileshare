@@ -250,10 +250,10 @@ function share_point_comp(file_path, file, user_token, cb) {
     }
 
     const wrap = div()
-        .set_style({ display: 'flex', gap: '8px', flexWrap: 'wrap' })
+        .set_style({ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' })
         .add(
             file.is_shared ? button(
-                'Delete share point',
+                'Unshare',
                 async () => {
                     if (!confirm('Delete share point for file "' + file.name + '" ?')) return
                     await delete_endpoint(`/api/share?hash=${encodeURIComponent(file.hash)}`, { headers: auth_headers(user_token) })
@@ -268,7 +268,7 @@ function share_point_comp(file_path, file, user_token, cb) {
                 cursor: 'pointer'
             }) : null,
             file.is_shared ? button(
-                'Copy share link',
+                'Link',
                 async () => {
                     copy_share_link(file.hash)
                 }
@@ -280,7 +280,7 @@ function share_point_comp(file_path, file, user_token, cb) {
                 color: '#111827',
                 cursor: 'pointer'
             }) : null,
-            !file.is_shared ? button('Create share point', async () => {
+            !file.is_shared ? button('Share', async () => {
                 const res = await post_json(`/api/share?path=${encodeURIComponent(file_path)}`, {}, {
                     headers: auth_headers(user_token)
                 })
@@ -345,12 +345,14 @@ function file_comp(file_path, file, user_token, cb, view_dir) {
                 .set_style({ color: '#6b7280', fontSize: '13px' }),
             br(),
             (file.time ? new Date(file.time).toLocaleString() : 'time unknown'),
-            br(),
-            //#region .... Share point
-            share_point_comp(file_path, file, user_token, cb).margin({ top: 6, bottom: 6 }),
-            //#region .... MOVE
+            // Actions row: Share | Move | Rename | Delete (inline, no stacking)
             (() => {
-                const controls = div().set_style({ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' })
+                const actions = div().set_style({ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '8px' })
+
+                // Share controls (compact)
+                actions.add(share_point_comp(file_path, file, user_token, cb))
+
+                // Move menu
                 const move_menu = div()
                     .set_style({
                         display: 'none',
@@ -382,7 +384,7 @@ function file_comp(file_path, file, user_token, cb, view_dir) {
 
                         const add_option = (label, destFolder) => {
                             const opt = button(label, async () => {
-                                // Build destination full folder path; server keeps filename
+                                // Build destination full folder path; server uses same filename unless rename param is used elsewhere
                                 const to = destFolder // may be '' for root
                                 try {
                                     const resp = await fetch(`/api/move?from=${encodeURIComponent(file_path)}&to=${encodeURIComponent(to)}`, {
@@ -437,24 +439,69 @@ function file_comp(file_path, file, user_token, cb, view_dir) {
                     cursor: 'pointer'
                 })
 
-                return div().add(move_btn, move_menu).margin({ top: 6, bottom: 6 })
-            })(),
-            //#region .... DELETE
-            button('Delete', async () => {
-                if (!confirm('Delete file "' + display_name + '" ?')) return
-                await fetch(`/api/file?path=${encodeURIComponent(file_path)}`, {
-                    method: 'DELETE',
-                    headers: auth_headers(user_token)
+                // Rename
+                const rename_btn = button('Rename', async () => {
+                    const currentName = file.name || ''
+
+                    // Split into base + ext (keep leading dot files as no-ext, e.g. ".env")
+                    let base = currentName
+                    let ext = ''
+                    const lastDot = currentName.lastIndexOf('.')
+                    if (lastDot > 0) { // ignore dot at index 0 (hidden files)
+                        base = currentName.slice(0, lastDot)
+                        ext = currentName.slice(lastDot) // includes dot
+                    }
+
+                    // Prompt only for the base name (no extension)
+                    const inputName = prompt('Rename to (name only):', base)
+                    if (inputName == null) return
+                    const entered = String(inputName).trim()
+                    if (!entered) return
+                    if (/[\\\/]/.test(entered)) { alert('Filename cannot contain slashes'); return }
+
+                    // If user didn't specify an extension, preserve the original one.
+                    // If they explicitly type an extension (contains a '.' not at start), respect it.
+                    let newName
+                    const dotPos = entered.lastIndexOf('.')
+                    if (dotPos > 0) newName = entered
+                    else newName = entered + ext
+
+                    const file_dir = file_path.split('/').slice(0, -1).join('/')
+                    try {
+                        const url = `/api/move?from=${encodeURIComponent(file_path)}&to=${encodeURIComponent(file_dir)}&name=${encodeURIComponent(newName)}`
+                        const resp = await fetch(url, { method: 'POST', headers: auth_headers(user_token) })
+                        try { await resp.json() } catch (_) { }
+                    } catch (e) { console.error('Rename failed', e) }
+                    await cb()
+                }).set_style({
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid #d1d5db',
+                    background: '#fff',
+                    color: '#111827',
+                    cursor: 'pointer'
                 })
-                cb()
-            }).set_style({
-                padding: '6px 10px',
-                borderRadius: '8px',
-                border: '1px solid #ef4444',
-                background: '#fff',
-                color: '#ef4444',
-                cursor: 'pointer'
-            })
+
+                // Delete
+                const del_btn = button('Delete', async () => {
+                    if (!confirm('Delete file "' + display_name + '" ?')) return
+                    await fetch(`/api/file?path=${encodeURIComponent(file_path)}`, {
+                        method: 'DELETE',
+                        headers: auth_headers(user_token)
+                    })
+                    cb()
+                }).set_style({
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid #ef4444',
+                    background: '#fff',
+                    color: '#ef4444',
+                    cursor: 'pointer'
+                })
+
+                actions.add(move_btn, move_menu, rename_btn, del_btn)
+                return actions
+            })()
         )
         .padding(12).margin(8).set_style({
             border: '1px solid #e5e7eb',
@@ -587,13 +634,13 @@ function create_dashboard(user_token, initial_total_size = null, initial_path = 
     async function update_tree() {
         render_breadcrumbs()
         const items = await user_get(`/api/tree?path=${encodeURIComponent(current_path)}`, user_token)
-        // Split and sort: folders by name (A→Z), files by date (older→newer)
+        // Split and sort: folders by name (A→Z), files by date (newer→older)
         const files = items
             .filter(i => !i.is_directory)
             .sort((a, b) => {
                 const ta = a?.time ?? 0
                 const tb = b?.time ?? 0
-                if (ta !== tb) return ta - tb // older first
+                if (ta !== tb) return tb - ta // newer first
                 return (a?.name || '').localeCompare(b?.name || '', undefined, { sensitivity: 'base' })
             })
         const folders = items

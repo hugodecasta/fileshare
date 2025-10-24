@@ -211,10 +211,11 @@ export function build_api() {
         }
     })
 
-    // Move a file to another folder (keeps original filename)
+    // Move a file to another folder and/or rename it
     // Query params:
     // - from: full current file path (e.g., "a/b/file.txt")
     // - to: destination folder path (e.g., "a/c" or "" for root)
+    // - name (optional): new filename (if omitted, keeps original filename)
     router.post('/move', (req, res) => {
         const key = getKeyFromAuth(req)
         if (!key) return res.status(401).json({ error: 'Missing or invalid Authorization header' })
@@ -223,8 +224,15 @@ export function build_api() {
         const toFolder = String(req.query.to ?? '').replace(/^\/+|\/+$/g, '')
         if (!from) return res.status(400).json({ error: 'Missing from' })
 
-        const baseName = from.split('/').filter(Boolean).slice(-1)[0]
-        const dest = (toFolder ? toFolder + '/' : '') + baseName
+        const originalBaseName = from.split('/').filter(Boolean).slice(-1)[0]
+        let newName = originalBaseName
+        if (typeof req.query.name === 'string') {
+            const candidate = String(req.query.name).trim()
+            if (!candidate) return res.status(400).json({ error: 'Invalid name' })
+            if (candidate.includes('/')) return res.status(400).json({ error: 'Name cannot contain slashes' })
+            newName = candidate
+        }
+        const dest = (toFolder ? toFolder + '/' : '') + newName
 
         if (dest === from) return res.json({ ok: true }) // no-op
 
