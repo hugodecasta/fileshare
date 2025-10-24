@@ -412,7 +412,6 @@ function refactor_old_user(uid) {
     const old_share = JSON.parse(fs.readFileSync(OLD_DIR + '/share.json', 'utf8'))
 
     const file_list = fs.readdirSync(OLD_DIR + '/' + uid + '/files', { withFileTypes: false })
-    const info = JSON.parse(fs.readFileSync(OLD_DIR + '/' + uid + '/info.json', 'utf8'))
     const list = JSON.parse(fs.readFileSync(OLD_DIR + '/' + uid + '/list.json', 'utf8'))
 
     for (const file_name of file_list) {
