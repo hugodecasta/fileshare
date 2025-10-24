@@ -6,6 +6,56 @@ import { pending_promise } from './vanille/promises.js'
 const user_db = new DATABASE('user_db', { token: null })
 const user = user_db.object
 
+// --- Helpers: URL-safe Base64 encode/decode (unicode-safe)
+function b64url_encode(str) {
+    // Encode to UTF-8 bytes, then to base64, then URL-safe
+    const utf8 = new TextEncoder().encode(str)
+    let bin = ''
+    for (const b of utf8) bin += String.fromCharCode(b)
+    const b64 = btoa(bin)
+    return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+// --- Hash helpers: keep key and folder path in the hash as k=<b64key>&p=<path>
+function parse_hash_params() {
+    const raw = (window.location.hash || '').replace(/^#/, '')
+    const params = new URLSearchParams(raw)
+    const k = params.get('k') || null
+    // URLSearchParams decodes automatically
+    const p = params.get('p') || ''
+    return { k, p }
+}
+
+function set_hash_params({ k = null, p = null } = {}) {
+    const params = new URLSearchParams()
+    if (k) params.set('k', k)
+    if (p) params.set('p', p)
+    const next = params.toString()
+    if (('#' + next) !== window.location.hash) window.location.hash = next
+}
+
+function sanitize_path(path) {
+    // Normalize, remove leading/trailing slashes and .. segments
+    return (path || '')
+        .split('/')
+        .filter(Boolean)
+        .filter(seg => seg !== '.' && seg !== '..')
+        .join('/')
+}
+
+function b64url_decode(b64url) {
+    try {
+        let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/')
+        // pad to multiple of 4
+        while (b64.length % 4) b64 += '='
+        const bin = atob(b64)
+        const bytes = new Uint8Array([...bin].map(c => c.charCodeAt(0)))
+        return new TextDecoder().decode(bytes)
+    } catch (_) {
+        return null
+    }
+}
+
 // Root container
 const app = div()
     .add2b()
@@ -71,7 +121,37 @@ const connect_btn = button('Connect', () => connect(input_connect.value))
         cursor: 'pointer'
     })
 
-connect_bar.add(input_connect, connect_btn)
+// Secondary button to copy URL with key and current path in hash
+const key_url_btn = button('key url', () => {
+    const token = (user.token ?? input_connect.value ?? '').trim()
+    if (!token) {
+        alert('No key to copy. Enter your key first.')
+        return
+    }
+    const key = b64url_encode(token)
+    // Try to keep current path from hash; dashboard updates it as p=
+    const { p } = parse_hash_params()
+    const params = new URLSearchParams()
+    params.set('k', key)
+    if (p) params.set('p', p)
+    const url = `${window.location.origin}${window.location.pathname}#${params.toString()}`
+    navigator.clipboard.writeText(url)
+
+    // Optional light feedback
+    key_url_btn.set_style({ opacity: 0.7 })
+    setTimeout(() => key_url_btn.set_style({ opacity: null }), 250)
+})
+    .set_style({
+        height: '36px',
+        padding: '0 10px',
+        borderRadius: '8px',
+        border: '1px solid #d1d5db',
+        background: 'transparent',
+        color: '#111827',
+        cursor: 'pointer'
+    })
+
+connect_bar.add(input_connect, connect_btn, key_url_btn)
 
 // Main content wrapper
 const container = div()
@@ -89,13 +169,30 @@ const main_view = div()
     .add('Not connected yet')
     .set_style({ paddingTop: '8px' })
 
-if (user.token) {
+// If a base64 key is present in the URL hash, decode and connect
+function try_connect_from_hash() {
+    const raw = (window.location.hash || '').replace(/^#/, '')
+    const { k } = parse_hash_params()
+    const token_b64 = k || raw || null
+    if (!token_b64) return false
+    const decoded = b64url_decode(token_b64)
+    if (!decoded) return false
+    input_connect.value = decoded
+    connect(decoded)
+    return true
+}
+
+if (!(try_connect_from_hash()) && user.token) {
     connect(user.token)
+}
+
+function auth_headers(token) {
+    return { 'Authorization': b64url_encode(token) }
 }
 
 async function user_get(endpoint, token) {
     return await get_json(endpoint, {
-        headers: { 'user': token }
+        headers: auth_headers(token)
     })
 }
 
@@ -107,7 +204,12 @@ async function connect(token) {
         return
     }
     user.token = token
-    create_dashboard(token)
+    // Ensure the hash contains the key so reloads keep you connected
+    const { p } = parse_hash_params()
+    set_hash_params({ k: b64url_encode(token), p: sanitize_path(p) })
+    // Pass initial total user size from login response + initial path from hash
+    const { p: p2 } = parse_hash_params()
+    create_dashboard(token, ok.size, sanitize_path(p2))
 }
 
 //#region ------------------------------------------------------ FILE COMP
@@ -138,10 +240,10 @@ function fix_mojibake_utf8(str) {
     }
 }
 
-function share_point_comp(file_id, file, user_token, cb) {
+function share_point_comp(file_path, file, user_token, cb) {
 
     function copy_share_link(share_point) {
-        const share_link = window.location.origin + '/files/share/' + share_point
+        const share_link = window.location.origin + '/api/share/' + share_point
         navigator.clipboard.writeText(share_link)
         alert('Share link copied to clipboard !')
 
@@ -150,11 +252,11 @@ function share_point_comp(file_id, file, user_token, cb) {
     const wrap = div()
         .set_style({ display: 'flex', gap: '8px', flexWrap: 'wrap' })
         .add(
-            file.share_point ? button(
+            file.is_shared ? button(
                 'Delete share point',
                 async () => {
                     if (!confirm('Delete share point for file "' + file.name + '" ?')) return
-                    await delete_endpoint(`/api/share_point/delete/${file_id}`, { headers: { 'user': user_token } })
+                    await delete_endpoint(`/api/share?hash=${encodeURIComponent(file.hash)}`, { headers: auth_headers(user_token) })
                     cb()
                 }
             ).set_style({
@@ -165,10 +267,10 @@ function share_point_comp(file_id, file, user_token, cb) {
                 color: '#ef4444',
                 cursor: 'pointer'
             }) : null,
-            file.share_point ? button(
+            file.is_shared ? button(
                 'Copy share link',
                 async () => {
-                    copy_share_link(file.share_point)
+                    copy_share_link(file.hash)
                 }
             ).set_style({
                 padding: '6px 10px',
@@ -178,10 +280,11 @@ function share_point_comp(file_id, file, user_token, cb) {
                 color: '#111827',
                 cursor: 'pointer'
             }) : null,
-            !file.share_point ? button('Create share point', async () => {
-                const { share_point } = await post_json(`/api/share_point/create/${file_id}`, {}, {
-                    headers: { 'user': user_token }
+            !file.is_shared ? button('Create share point', async () => {
+                const res = await post_json(`/api/share?path=${encodeURIComponent(file_path)}`, {}, {
+                    headers: auth_headers(user_token)
                 })
+                const share_point = res.share
                 copy_share_link(share_point)
                 cb()
             }).set_style({
@@ -196,12 +299,12 @@ function share_point_comp(file_id, file, user_token, cb) {
     return wrap
 }
 
-function file_comp(file_id, file, user_token, cb) {
+function file_comp(file_path, file, user_token, cb) {
     const display_name = fix_mojibake_utf8(file.name ?? '')
     const card = div()
         .add(
             //#region .... DOWNLOAD LINK
-            alink('#', '', display_name)
+            alink('javascript:void(0)', '', display_name)
                 .set_style({
                     fontSize: '17px',
                     fontWeight: 600,
@@ -214,12 +317,11 @@ function file_comp(file_id, file, user_token, cb) {
                 })
                 .block().margin({ bottom: 6 })
                 .set_attributes({ title: display_name })
+                .on('click', (e) => e.preventDefault())
                 .set_click(async () => {
-                    const response = await fetch(`/files/${file_id}`, {
+                    const response = await fetch(`/api/blob?path=${encodeURIComponent(file_path)}`, {
                         method: 'GET',
-                        headers: {
-                            'user': user_token
-                        }
+                        headers: auth_headers(user_token)
                     })
                     const blob = await response.blob()
                     const url = window.URL.createObjectURL(blob)
@@ -233,13 +335,13 @@ function file_comp(file_id, file, user_token, cb) {
             (file.time ? new Date(file.time).toLocaleString() : 'time unknown'),
             br(),
             //#region .... Share point
-            share_point_comp(file_id, file, user_token, cb).margin({ top: 6, bottom: 6 }),
+            share_point_comp(file_path, file, user_token, cb).margin({ top: 6, bottom: 6 }),
             //#region .... DELETE
             button('Delete', async () => {
                 if (!confirm('Delete file "' + display_name + '" ?')) return
-                const response = await fetch(`/api/files/delete/${file_id}`, {
+                await fetch(`/api/file?path=${encodeURIComponent(file_path)}`, {
                     method: 'DELETE',
-                    headers: { 'user': user_token }
+                    headers: auth_headers(user_token)
                 })
                 cb()
             }).set_style({
@@ -262,10 +364,15 @@ function file_comp(file_id, file, user_token, cb) {
 }
 
 //#region ------------------------------------------------------ DASHBOARD
-function create_dashboard(user_token) {
+function create_dashboard(user_token, initial_total_size = null, initial_path = '') {
 
     const account_stats = div()
         .set_style({ color: '#374151', fontSize: '14px' })
+
+    // Total user size element shown next to "Your files"
+    const total_size_elm = span(
+        initial_total_size == null ? '' : ` (Total: ${comvert_size_to_display(initial_total_size)})`
+    ).set_style({ color: '#6b7280', fontSize: '14px', fontWeight: 500 })
 
     main_view.clear().add(
         div().set_style({
@@ -276,99 +383,244 @@ function create_dashboard(user_token) {
             gap: '8px',
             flexWrap: 'wrap'
         }).add(
-            h2('Your files').set_style({ fontSize: '19px', margin: 0 }),
+            div().add(
+                h2('Your files').set_style({ fontSize: '19px', margin: 0, display: 'inline' }),
+                total_size_elm
+            ),
             account_stats
         )
     )
 
-    //#region .... LIST
+    //#region .... TREE + BREADCRUMBS
     const list_elm = div()
         .set_style({
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
             gap: '14px'
         })
-    async function update_list() {
-        const list = await user_get('/api/files/get_list', user_token)
-        const list_length = Object.keys(list.files).length
-        const total_size = Object.values(list.files).reduce((acc, file) => acc + (file.size ?? 0), 0)
-        account_stats.clear().add(
-            span(list_length + ' file' + (list_length !== 1 ? 's' : '') + ' · ' + comvert_size_to_display(total_size))
-        )
-        const getTime = (f) => f?.time ? new Date(f.time).getTime() : 0
-        const sorted_entries = Object.entries(list.files)
-            .sort(([, a], [, b]) => getTime(b) - getTime(a))
-        list_elm.clear().add(
-            list_length === 0 ? div().set_style({ color: '#6b7280' }).add('No files uploaded yet') : null,
-            ...sorted_entries.map(([id, file]) => file_comp(id, file, user_token, update_list)),
-        )
+
+    let current_path = sanitize_path(initial_path || '')
+
+    // Keep hash in sync with navigation (preserve key)
+    function sync_hash_path() {
+        const { k } = parse_hash_params()
+        set_hash_params({ k, p: current_path })
     }
-    update_list()
+
+    const breadcrumbs = div()
+        .set_style({ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', marginBottom: '8px' })
+
+    const folder_actions = div()
+        .set_style({ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' })
+        .add(
+            button('New folder', async () => {
+                const name_raw = prompt('New folder name?')
+                if (name_raw == null) return
+                const name = String(name_raw).trim()
+                if (!name) return
+                if (/[\/]/.test(name)) {
+                    alert('Folder name cannot contain slashes')
+                    return
+                }
+                const resp = await fetch(`/api/folder?path=${encodeURIComponent(current_path)}&name=${encodeURIComponent(name)}`,
+                    { method: 'POST', headers: auth_headers(user_token) })
+                try {
+                    const json = await resp.json()
+                    if (!json.ok) alert('Could not create folder (maybe it already exists)')
+                } catch (_) { }
+                update_tree()
+            }).set_style({
+                padding: '6px 10px',
+                borderRadius: '8px',
+                border: '1px solid #111827',
+                background: '#111827',
+                color: '#fff',
+                cursor: 'pointer'
+            })
+        )
+
+    function render_breadcrumbs() {
+        const parts = current_path.split('/').filter(Boolean)
+        const elems = []
+        let accum = ''
+        elems.push(
+            alink('javascript:void(0)', '', 'Root')
+                .on('click', (e) => e.preventDefault())
+                .set_style({ color: '#111827' })
+                .set_click(() => {
+                    current_path = ''
+                    set_hash_params({ k: parse_hash_params().k, p: '' })
+                    // Force reload to honor request: reload with that hash
+                    location.reload()
+                })
+        )
+        for (let i = 0; i < parts.length; i++) {
+            const p = parts[i]
+            accum += (accum ? '/' : '') + p
+            const p_path = accum
+            elems.push(span('/').set_style({ color: '#9ca3af' }))
+            elems.push(
+                alink('javascript:void(0)', '', p)
+                    .on('click', (e) => e.preventDefault())
+                    .set_click(() => {
+                        current_path = p_path
+                        set_hash_params({ k: parse_hash_params().k, p: current_path })
+                        location.reload()
+                    })
+            )
+        }
+        breadcrumbs.clear().add(...elems)
+    }
+
+    // Helper to refresh total user size from server
+    async function refresh_total_size() {
+        try {
+            const res = await user_get('/api/login', user_token)
+            if (!res || res.error) return
+            total_size_elm.clear().add(` (Total: ${comvert_size_to_display(res.size)})`)
+        } catch (_) { /* ignore */ }
+    }
+
+    async function update_tree() {
+        render_breadcrumbs()
+        const items = await user_get(`/api/tree?path=${encodeURIComponent(current_path)}`, user_token)
+        // Split and sort: folders by name (A→Z), files by date (older→newer)
+        const files = items
+            .filter(i => !i.is_directory)
+            .sort((a, b) => {
+                const ta = a?.time ?? 0
+                const tb = b?.time ?? 0
+                if (ta !== tb) return ta - tb // older first
+                return (a?.name || '').localeCompare(b?.name || '', undefined, { sensitivity: 'base' })
+            })
+        const folders = items
+            .filter(i => i.is_directory)
+            .sort((a, b) => (a?.name || '').localeCompare(b?.name || '', undefined, { sensitivity: 'base' }))
+        const total_size = files.reduce((acc, f) => acc + (f.size ?? 0), 0)
+        account_stats.clear().add(
+            span(`${folders.length} folder${folders.length !== 1 ? 's' : ''} · ${files.length} file${files.length !== 1 ? 's' : ''} · ${comvert_size_to_display(total_size)}`)
+        )
+        list_elm.clear()
+        if (items.length === 0) list_elm.add(div().set_style({ color: '#6b7280' }).add('This folder is empty'))
+        // Folders first
+        for (const f of folders) {
+            const p = (current_path ? current_path + '/' : '') + f.name
+            const card = div()
+                .add(
+                    alink('javascript:void(0)', '', '📁 ' + f.name)
+                        .set_style({ fontSize: '17px', fontWeight: 600, color: '#0f172a', textDecoration: 'none' })
+                        .block().margin({ bottom: 6 })
+                        .on('click', (e) => e.preventDefault())
+                        .set_click(() => {
+                            current_path = p
+                            set_hash_params({ k: parse_hash_params().k, p: current_path })
+                            location.reload()
+                        }),
+                    span('Folder').set_style({ color: '#6b7280', fontSize: '13px' }),
+                    br(),
+                    button('Delete folder', async () => {
+                        const confirm_msg = `Delete folder "${f.name}" and ALL its contents? This cannot be undone.`
+                        if (!confirm(confirm_msg)) return
+                        await fetch(`/api/folder?path=${encodeURIComponent(p)}`,
+                            { method: 'DELETE', headers: auth_headers(user_token) })
+                        await update_tree()
+                        await refresh_total_size()
+                    }).set_style({
+                        padding: '6px 10px',
+                        borderRadius: '8px',
+                        border: '1px solid #ef4444',
+                        background: '#fff',
+                        color: '#ef4444',
+                        cursor: 'pointer'
+                    }).margin({ top: 6 })
+                )
+                .padding(12).margin(8).set_style({
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '12px',
+                    background: '#ffffff',
+                    boxShadow: '0 1px 2px rgba(16,24,40,0.04)',
+                    minWidth: '0'
+                })
+            list_elm.add(card)
+        }
+        // Files
+        for (const f of files) {
+            const p = (current_path ? current_path + '/' : '') + f.name
+            // Wrap callback to also refresh total size after file ops (delete/download triggers refresh call after action when needed)
+            list_elm.add(file_comp(p, f, user_token, async () => {
+                await update_tree()
+                await refresh_total_size()
+            }))
+        }
+    }
+    update_tree()
+    // Ensure hash reflects initial path after first draw
+    sync_hash_path()
+
+    // If hash changes (e.g., back/forward), reload to re-init with that hash
+    const on_hash_change = () => location.reload()
+    window.addEventListener('hashchange', on_hash_change)
 
     //#region .... DROPPER
+    let is_uploading = false
+
+    async function do_batch_upload(file_list) {
+        if (!file_list || file_list.length === 0) return
+        if (is_uploading) return
+        is_uploading = true
+
+        // UI: progress bar + text
+        const bar = div().set_style({
+            width: '100%',
+            height: '10px',
+            backgroundColor: '#e5e7eb',
+            overflow: 'hidden',
+            borderRadius: '999px'
+        })
+        const inner_bar = div().add2(bar).set_style({
+            width: '0%', height: '100%', backgroundColor: '#16a34a', transition: 'width 0.2s', borderRadius: '999px'
+        })
+        const status = div().set_style({ fontSize: '12px', color: '#374151', marginBottom: '6px' })
+            .add(`Uploading ${file_list.length} file${file_list.length !== 1 ? 's' : ''}...`)
+
+        dropper_elm.clear().add(status, bar).set_style({ pointerEvents: 'none', opacity: 0.9 })
+
+        let uploaded = 0
+        for (const f of file_list) {
+            try {
+                await fetch(`/api/file?path=${encodeURIComponent(current_path)}&name=${encodeURIComponent(f.name)}`,
+                    { method: 'POST', headers: auth_headers(user_token), body: f })
+            } catch (e) {
+                console.error('Upload failed for', f?.name, e)
+            }
+            uploaded++
+            inner_bar.set_style({ width: `${Math.round((uploaded / file_list.length) * 100)}%` })
+        }
+
+        // Post-upload: let user know we're refreshing
+        status.clear().add('Refreshing…')
+
+        await update_tree()
+        await refresh_total_size()
+
+        // Back to idle
+        set_dropper_idle()
+        dropper_elm.set_style({ pointerEvents: 'auto', opacity: 1, backgroundColor: 'transparent' })
+        is_uploading = false
+    }
+
     const dropper_elm = file_drop_div(
-        (formData) => {
-            const [resolve, error, prom] = pending_promise()
-            const xhr = new XMLHttpRequest()
-            xhr.open('POST', '/api/files/drop')
-            xhr.setRequestHeader('Accept', 'application/json')
-
-            const bar = div().set_style({
-                width: '100%',
-                height: '10px',
-                backgroundColor: '#e5e7eb',
-                overflow: 'hidden',
-                borderRadius: '999px'
-            })
-            const inner_bar = div().add2(bar).set_style({
-                width: '0%',
-                height: '100%',
-                backgroundColor: '#16a34a',
-                transition: 'width 0.2s',
-                borderRadius: '999px'
-            })
-
-            xhr.upload.onprogress = function (e) {
-                dropper_elm
-                    .clear()
-                    .add(
-                        div().set_style({ fontSize: '12px', color: '#374151', marginBottom: '6px' })
-                            .add('Uploading ' + comvert_size_to_display(e.total) + '...'),
-                        bar
-                    )
-                    .set_style({ pointerEvents: 'none', opacity: 0.9 })
-                if (e.lengthComputable) {
-                    const percent_complete = (e.loaded / e.total) * 100
-                    inner_bar.set_style({ width: percent_complete + '%' })
-                }
-            }
-            xhr.onload = function () {
-                if (xhr.status === 200) {
-                    try {
-                        const result = JSON.parse(xhr.responseText)
-                        resolve({ json: () => result })
-                        update_list()
-                    } catch (e) {
-                        error(e)
-                    }
-                } else {
-                    error()
-                }
-            }
-            xhr.onerror = function () {
-                error()
-            }
-            xhr.setRequestHeader('user', user_token)
-            xhr.send(formData)
-            return prom
-        },
-        () => {
-            dropper_elm.clear().set_style({ pointerEvents: 'auto', opacity: 1, backgroundColor: 'transparent' })
-            update_list()
-        },
-        false,
+        async () => ({ json: () => ({ ok: true }) }), // not used when on_drop returns true
+        () => { }, // no-op per-file callback
+        true,
         () => dropper_elm.set_style({ backgroundColor: '#f3f4f6' }),
-        () => dropper_elm.set_style({ backgroundColor: 'transparent' })
+        () => dropper_elm.set_style({ backgroundColor: 'transparent' }),
+        (_, files) => { // on_drop override for both drag-and-drop and file picker
+            const list = Array.from(files || [])
+            if (list.length === 0) return true
+            do_batch_upload(list)
+            return true // signal handled to skip default internal uploads
+        }
     )
         .relative()
         .set_style({
@@ -386,28 +638,19 @@ function create_dashboard(user_token) {
             boxSizing: 'border-box'
         })
 
-    // Dropper inner content (idle)
-    const dropper_inner = div().set_style({ color: '#374151' }).add(
-        div().set_style({
-            width: '40px',
-            height: '40px',
-            borderRadius: '10px',
-            background: '#111827',
-            color: '#fff',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontWeight: 700
-        }).add('⤓'),
-        div().add(
-            span('Drop files here or click to upload').block().set_style({ fontWeight: 600 }),
-            span('Max size depends on server config.').set_style({ fontSize: '12px', color: '#6b7280' })
+    // Dropper content (idle) — simplified so nothing blocks clicks
+    function set_dropper_idle() {
+        dropper_elm.clear().add(
+            span('Drop files here or click to upload')
+                .set_style({ fontWeight: 600, color: '#374151', pointerEvents: 'none' })
         )
-    )
-    dropper_elm.add(dropper_inner)
+    }
+    set_dropper_idle()
 
     //#region .... MAIN SETUP
     main_view.add(
         div().set_style({ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' })
-            .add(dropper_elm, list_elm)
+            .add(breadcrumbs, folder_actions, dropper_elm, list_elm)
     )
 
     // Responsive tweaks to avoid horizontal overflow on small screens

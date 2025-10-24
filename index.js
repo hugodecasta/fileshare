@@ -1,8 +1,7 @@
 import express from 'express'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { api_router, file_router } from './API.js'
-import FileUser from './filesystem.js'
+import { build_api } from './file_engine_api.js'
 import fs from 'fs'
 
 // Get dirname equivalent in ESM
@@ -23,8 +22,7 @@ app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
 // Mount API router
-app.use('/api', api_router)
-app.use('/files', file_router)
+app.use('/api', build_api())
 
 // Serve static files from 'front' directory
 app.use(express.static(path.join(__dirname, 'front')))
@@ -32,11 +30,7 @@ app.use(express.static(path.join(__dirname, 'front')))
 // Set port
 const PORT = process.env.PORT || 3000
 
-// launch user deletion check
-setInterval(() => {
-    FileUser.users_deletion_check()
-}, 1000 * 60 * 60) // every hour
-FileUser.users_deletion_check()
+// No periodic user deletion in new system
 
 // Start server
 app.listen(PORT, () => {
