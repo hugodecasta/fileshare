@@ -1,6 +1,6 @@
 import { alink, br, button, div, file_drop_div, h2, hr, input, span } from './vanille/components.js'
 import { DATABASE } from './vanille/db_sytem/database.js'
-import { click_link, delete_endpoint, download_file, get_json, post_json } from './vanille/fetch_utils.js'
+import { click_link, delete_endpoint, download_blob_file, download_file, get_json, post_json } from './vanille/fetch_utils.js'
 import { pending_promise } from './vanille/promises.js'
 
 const user_db = new DATABASE('user_db', { token: null })
@@ -353,7 +353,7 @@ function file_comp(file_path, file, user_token, cb, view_dir) {
                         // Open in a new tab (no download attribute so browser renders inline)
                         click_link(url, '_blank')
                     } else {
-                        download_file(display_name, url)
+                        download_blob_file(display_name, blob)
                     }
                     // Revoke later to free memory
                     setTimeout(() => URL.revokeObjectURL(url), 30000)
