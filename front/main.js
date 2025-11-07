@@ -6,6 +6,18 @@ import { pending_promise } from './vanille/promises.js'
 const user_db = new DATABASE('user_db', { token: null })
 const user = user_db.object
 
+function can_inline(mime) {
+    if (!mime) return false
+    mime = mime.toLowerCase()
+    return (
+        mime.startsWith('image/') ||
+        mime.startsWith('video/') ||
+        mime.startsWith('audio/') ||
+        mime.startsWith('text/') ||
+        mime === 'application/pdf'
+    )
+}
+
 // --- Helpers: URL-safe Base64 encode/decode (unicode-safe)
 function b64url_encode(str) {
     // Encode to UTF-8 bytes, then to base64, then URL-safe
@@ -320,18 +332,6 @@ function file_comp(file_path, file, user_token, cb, view_dir) {
                 .on('click', (e) => e.preventDefault())
                 .set_click(async () => {
 
-                    function can_inline(mime) {
-                        if (!mime) return false
-                        mime = mime.toLowerCase()
-                        return (
-                            mime.startsWith('image/') ||
-                            mime.startsWith('video/') ||
-                            mime.startsWith('audio/') ||
-                            mime.startsWith('text/') ||
-                            mime === 'application/pdf'
-                        )
-                    }
-
                     // Fetch inline view (preserves MIME type) and open in a new tab without forcing download
                     const response = await fetch(`/api/view?path=${encodeURIComponent(file_path)}`, {
                         method: 'GET',
@@ -502,6 +502,38 @@ function file_comp(file_path, file, user_token, cb, view_dir) {
                     cursor: 'pointer'
                 })
 
+                // Download (fixed: use /api/view like inline open)
+                const download_btn = button('Download', async () => {
+                    try {
+                        const response = await fetch(`/api/view?path=${encodeURIComponent(file_path)}`, {
+                            method: 'GET',
+                            headers: auth_headers(user_token)
+                        })
+                        if (!response.ok) {
+                            try {
+                                const j = await response.json()
+                                alert(j?.error || 'Download failed')
+                            } catch (_) {
+                                alert('Download failed')
+                            }
+                            return
+                        }
+                        const blob = await response.blob()
+                        download_blob_file(display_name, blob)
+                        setTimeout(cb, 500)
+                    } catch (e) {
+                        console.error('Download error', e)
+                        alert('Download error')
+                    }
+                }).set_style({
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid #d1d5db',
+                    background: '#fff',
+                    color: '#111827',
+                    cursor: 'pointer'
+                })
+
                 // Delete
                 const del_btn = button('Delete', async () => {
                     if (!confirm('Delete file "' + display_name + '" ?')) return
@@ -519,7 +551,7 @@ function file_comp(file_path, file, user_token, cb, view_dir) {
                     cursor: 'pointer'
                 })
 
-                actions.add(move_btn, move_menu, rename_btn, del_btn)
+                actions.add(move_btn, move_menu, rename_btn, download_btn, del_btn)
                 return actions
             })()
         )
