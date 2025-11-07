@@ -107,6 +107,7 @@ export function build_api() {
 
     // Download a file by path
     router.get('/blob', (req, res) => {
+        console.log('blobing')
         const key = getKeyFromAuth(req)
         if (!key) return res.status(401).json({ error: 'Missing or invalid Authorization header' })
         const path = String(req.query.path || '').replace(/^\/+/, '')
@@ -122,6 +123,7 @@ export function build_api() {
     // View a file inline by path (like static serve)
     router.get('/view', (req, res) => {
         const key = getKeyFromAuth(req)
+        console.log('OOO', key)
         if (!key) return res.status(401).json({ error: 'Missing or invalid Authorization header' })
         const path = String(req.query.path || '').replace(/^\/+/, '')
         if (!path) return res.status(400).json({ error: 'Missing path' })

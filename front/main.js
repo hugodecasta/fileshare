@@ -1,6 +1,6 @@
 import { alink, br, button, div, file_drop_div, h2, hr, input, span } from './vanille/components.js'
 import { DATABASE } from './vanille/db_sytem/database.js'
-import { click_link, delete_endpoint, get_json, post_json } from './vanille/fetch_utils.js'
+import { click_link, delete_endpoint, download_file, get_json, post_json } from './vanille/fetch_utils.js'
 import { pending_promise } from './vanille/promises.js'
 
 const user_db = new DATABASE('user_db', { token: null })
@@ -319,6 +319,19 @@ function file_comp(file_path, file, user_token, cb, view_dir) {
                 .set_attributes({ title: display_name })
                 .on('click', (e) => e.preventDefault())
                 .set_click(async () => {
+
+                    function can_inline(mime) {
+                        if (!mime) return false
+                        mime = mime.toLowerCase()
+                        return (
+                            mime.startsWith('image/') ||
+                            mime.startsWith('video/') ||
+                            mime.startsWith('audio/') ||
+                            mime.startsWith('text/') ||
+                            mime === 'application/pdf'
+                        )
+                    }
+
                     // Fetch inline view (preserves MIME type) and open in a new tab without forcing download
                     const response = await fetch(`/api/view?path=${encodeURIComponent(file_path)}`, {
                         method: 'GET',
@@ -333,10 +346,17 @@ function file_comp(file_path, file, user_token, cb, view_dir) {
                         }
                         return
                     }
+                    const content_type = response.headers.get('Content-Type') || ''
                     const blob = await response.blob()
-                    const url = window.URL.createObjectURL(blob)
-                    // Open in a new tab (no download attribute so browser renders inline)
-                    click_link(url, '_blank')
+                    const url = URL.createObjectURL(blob)
+                    if (can_inline(content_type)) {
+                        // Open in a new tab (no download attribute so browser renders inline)
+                        click_link(url, '_blank')
+                    } else {
+                        download_file(display_name, url)
+                    }
+                    // Revoke later to free memory
+                    setTimeout(() => URL.revokeObjectURL(url), 30000)
                     // Give the server a moment to record the access and then refresh
                     setTimeout(cb, 500)
                 }),
